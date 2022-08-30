@@ -1,0 +1,69 @@
+name: Register APP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  Register:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: master
+          token: ${{ secrets.PAT }}
+      
+      - name: Pull upstream
+        run: bash wrapper.sh pull sync
+
+      - name: Setup nodejs
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'npm'
+          cache-dependency-path: '**/package.json'
+
+      - name: Set python
+        id: setup-python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+
+      - name: Install specific version of azure-cli
+        run: |
+          sudo apt-get remove azure-cli -y
+          sudo apt-get autoremove -y
+          pip3 install azure-cli==2.30.0
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install python dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install node dependencies
+        run: |
+          cd register
+          npm install
+
+      - name: Register apps
+        env:
+          USER: ${{ secrets.USER }}
+          PASSWD: ${{ secrets.PASSWD }}
+        run: bash wrapper.sh register
+
+      - name: Commit and push
+        run: bash wrapper.sh push "generate app config"
